@@ -8,46 +8,71 @@ import (
     "time"
 )
 
-type MessageQueue struct {
-    subscribers []*Subscriber
-}
+//type MessageQueue struct {
+//    subscribers []*Subscriber
+//}
+//
+//func (mq *MessageQueue) AddSubscriber(sub *Subscriber) {
+//    fmt.Printf("Subscriber added!\n")
+//    mq.subscribers = append(mq.subscribers, sub)
+//}
+//
+//func (mq *MessageQueue) Publish(msg string) {
+//    for _, sub := range mq.subscribers {
+//        sub.OnReceive(msg)
+//    }
+//}
+//
+//type Subscriber struct {
+//    id int
+//}
+//
+//func (sub *Subscriber) String() string {
+//    return fmt.Sprintf("Subscriber{%v}", sub.id)
+//}
+//
+//func (sub *Subscriber) OnReceive(msg string) {
+//    fmt.Printf("%v received: %s\n", sub, msg)
+//}
 
-func (mq *MessageQueue) AddSubscriber(sub *Subscriber) {
-    fmt.Printf("Subscriber added!\n")
-    mq.subscribers = append(mq.subscribers, sub)
-}
 
-func (mq *MessageQueue) Publish(msg string) {
-    for _, sub := range mq.subscribers {
-        sub.OnReceive(msg)
-    }
-}
-
-type Subscriber struct {
+type Connection struct {
     id int
+    conn net.Conn
 }
 
-func (sub *Subscriber) String() string {
-    return fmt.Sprintf("Subscriber{%v}", sub.id)
+type ConnectionLoop struct {
+    connections map[int]Connection
+    newConnectionChan chan net.Conn
+    nextConnectionID int
 }
 
-func (sub *Subscriber) OnReceive(msg string) {
-    fmt.Printf("%v received: %s\n", sub, msg)
+func (cl *ConnectionLoop) AddConnection(conn net.Conn) Connection {
+    id := cl.nextConnectionID
+    cl.connections[id] = Connection{id, conn}
+    cl.nextConnectionID++
+    return cl.connections[id]
 }
 
-func connectionLoop(newConnectionChan chan net.Conn) {
-    var connections []net.Conn
-    connectionChan := make(chan string, 128)
+func (cl *ConnectionLoop) DeleteConnection(connection Connection) {
+    delete(cl.connections, connection.id)
+}
+
+func (cl *ConnectionLoop) Exec() {
+    connectionChan := make(chan ConnectionMsg, 128)
     for {
         select {
-        case conn := <-newConnectionChan:
-            connections = append(connections, conn)
-            go connectionHandler(conn, connectionChan)
+        case conn := <-cl.newConnectionChan:
+            connection := cl.AddConnection(conn)
+            go connectionHandler(connection, connectionChan)
             fmt.Println("omg a connection")
-        case msg := <-connectionChan:
-            fmt.Println(msg)
+        case connMsg := <-connectionChan:
+            fmt.Println(connMsg.msg)
+            if isQuitMessage(connMsg.msg) {
+                cl.DeleteConnection(connMsg.connection)
+            }
         default:
-            for i := range connections {
+            for i := range cl.connections {
                 fmt.Println(i)
             }
             time.Sleep(1 * time.Second)
@@ -55,20 +80,25 @@ func connectionLoop(newConnectionChan chan net.Conn) {
     }
 }
 
-func connectionHandler(conn net.Conn, connectionChan chan string) {
-    reader:= bufio.NewReader(conn)
+type ConnectionMsg struct {
+    connection Connection
+    msg string
+}
+
+func connectionHandler(connection Connection, connectionChan chan ConnectionMsg) {
+    reader:= bufio.NewReader(connection.conn)
     for {
         text, _ := reader.ReadString('\n')
-        connectionChan <- text
+        connectionChan <- ConnectionMsg{connection, text}
         //fmt.Println(text)
-        if strings.ToLower(strings.TrimSpace(text)) == "quit" {
+        if isQuitMessage(text) {
             break
         }
     }
 }
 
-func isQuitMessage() {
-    // TODO
+func isQuitMessage(msg string) bool {
+    return strings.ToLower(strings.TrimSpace(msg)) == "quit"
 }
 
 func main() {
@@ -81,7 +111,12 @@ func main() {
     fmt.Println("Started server listening on port 3005.")
 
     newConnectionChan := make(chan net.Conn, 5)
-    go connectionLoop(newConnectionChan)
+    cl := ConnectionLoop {
+        connections: make(map[int]Connection),
+        newConnectionChan: newConnectionChan,
+        nextConnectionID: 0,
+    }
+    go cl.Exec()
 
     for {
         conn, err := ln.Accept()
