@@ -3,25 +3,13 @@ package starkmq
 import (
     "fmt"
     "net"
+
+    "github.com/brandonto/StarkMQ/common"
 )
 
 type starkMQClient struct {
     conn net.Conn
 }
-
-type StarkMQMsg struct {
-    MsgType StarkMQMsgType
-    Payload string
-}
-
-type StarkMQMsgType int
-
-const (
-    SUBSCRIBE StarkMQMsgType = iota
-    UNSUBSCRIBE
-    PUBLISH
-    QUIT
-)
 
 var client starkMQClient
 
@@ -37,30 +25,30 @@ func Connect() {
 }
 
 func Subscribe() {
-    msg := StarkMQMsg{MsgType: SUBSCRIBE, Payload: "subscribe\n"}
+    msg := common.NewStarkMQMsg(common.SUBSCRIBE, "subscribe\n")
     send(msg)
 }
 
 func Unsubscribe() {
-    msg := StarkMQMsg{MsgType: UNSUBSCRIBE, Payload: "unsubscribe\n"}
+    msg := common.NewStarkMQMsg(common.UNSUBSCRIBE, "unsubscribe\n")
     send(msg)
 }
 
 func Publish(text string) {
-    msg := StarkMQMsg{MsgType: PUBLISH, Payload: text}
+    msg := common.NewStarkMQMsg(common.PUBLISH, text)
     send(msg)
 }
 
-func send(msg StarkMQMsg) {
+func send(msg common.StarkMQMsg) {
     switch msg.MsgType {
-    case SUBSCRIBE:
+    case common.SUBSCRIBE:
         fallthrough
-    case UNSUBSCRIBE:
+    case common.UNSUBSCRIBE:
         fallthrough
-    case PUBLISH:
+    case common.PUBLISH:
         fallthrough
-    case QUIT:
-        fmt.Fprintf(client.conn, msg.Payload)
+    case common.QUIT:
+        fmt.Fprintf(client.conn, common.Serialize(msg))
     default:
         // handle error
         fmt.Println("message type unsupported")
@@ -69,7 +57,7 @@ func send(msg StarkMQMsg) {
 }
 
 func Close() {
-    msg := StarkMQMsg{MsgType: QUIT, Payload: "quit\n"}
+    msg := common.NewStarkMQMsg(common.QUIT, "quit\n")
     send(msg)
     client.conn.Close()
 }
