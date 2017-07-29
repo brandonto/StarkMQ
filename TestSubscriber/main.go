@@ -2,29 +2,30 @@ package main
 
 import (
     "bufio"
-    "fmt"
-    "net"
+    //"fmt"
     "os"
     "strings"
+
+    "github.com/brandonto/StarkMQ/go-client"
 )
 
+func isQuitMessage(msg string) bool {
+    return strings.ToLower(strings.TrimSpace(msg)) == "quit"
+}
+
 func main() {
-    conn, err := net.Dial("tcp", ":3005")
-    if err != nil {
-        // handle error
-        fmt.Println(err)
-        return
-    }
-    fmt.Println("Connected to server on port 3005.")
+    starkmq.Connect()
+    starkmq.Subscribe()
 
     reader := bufio.NewReader(os.Stdin)
     for {
         text, _ := reader.ReadString('\n')
-        fmt.Fprintf(conn, text)
-        if strings.ToLower(strings.TrimSpace(text)) == "quit" {
+        if isQuitMessage(text) {
+            starkmq.Close()
             break
         }
+        starkmq.Publish(text)
     }
 
-    conn.Close()
+    starkmq.Close()
 }

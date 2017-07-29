@@ -58,6 +58,13 @@ func (cl *ConnectionLoop) DeleteConnection(connection Connection) {
     delete(cl.connections, connection.id)
 }
 
+func (cl *ConnectionLoop) handleMsg(msg ) {
+    fmt.Println(connMsg.msg)
+    if isQuitMessage(connMsg.msg) {
+        cl.DeleteConnection(connMsg.connection)
+    }
+}
+
 func (cl *ConnectionLoop) Exec() {
     connectionChan := make(chan ConnectionMsg, 128)
     for {
@@ -67,10 +74,7 @@ func (cl *ConnectionLoop) Exec() {
             go connectionHandler(connection, connectionChan)
             fmt.Println("omg a connection")
         case connMsg := <-connectionChan:
-            fmt.Println(connMsg.msg)
-            if isQuitMessage(connMsg.msg) {
-                cl.DeleteConnection(connMsg.connection)
-            }
+            cl.handleMsg(connMsg)
         default:
             for i := range cl.connections {
                 fmt.Println(i)
