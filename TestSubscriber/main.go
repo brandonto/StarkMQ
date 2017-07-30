@@ -19,8 +19,8 @@ func main() {
 
     reader := bufio.NewReader(os.Stdin)
     for {
-        text, _ := reader.ReadString('\n')
-        if isQuitMessage(text) {
+        text, err := reader.ReadString('\n')
+        if err != nil || isQuitMessage(text) {
             starkmq.Close()
             break
         }
