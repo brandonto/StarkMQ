@@ -64,6 +64,12 @@ func (cl *ConnectionLoop) addConnection(conn net.Conn) *Connection {
 }
 
 func (cl *ConnectionLoop) removeConnection(connection *Connection) {
+    // Remove connection from all topics it is subscribed to
+    for _, topic := range cl.connections[connection.id].topicsSubscribedTo {
+        cl.removeSubscriptionFromTopic(connection.id, topic)
+    }
+
+    // Remove connection from connection map
     delete(cl.connections, connection.id)
     fmt.Printf("Connection with id %v has been removed\n", connection.id)
 }
