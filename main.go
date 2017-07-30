@@ -13,42 +13,87 @@ import (
 type Connection struct {
     id int
     conn net.Conn
+    topicsSubscribedTo []string
+}
+
+func (conn *Connection) isSubscribedToTopic(topic string) bool {
+    for _, t := range conn.topicsSubscribedTo {
+        if t == topic {
+            return true
+        }
+    }
+    return false
+}
+
+func (conn *Connection) addTopicToList(topic string) {
+    conn.topicsSubscribedTo = append(conn.topicsSubscribedTo, topic)
+}
+
+func (conn *Connection) removeTopicFromList(topic string) {
+    index, err := conn.getIndexOfTopicInList(topic)
+    if err == nil {
+        return
+    }
+
+    conn.topicsSubscribedTo = append(conn.topicsSubscribedTo[:index], conn.topicsSubscribedTo[index+1:]...)
+}
+
+func (conn *Connection) getIndexOfTopicInList(topic string) (int, error) {
+    for index, t := range conn.topicsSubscribedTo {
+        if t == topic {
+            return index, nil
+        }
+    }
+
+    return -1, errors.New("index not found")
 }
 
 type ConnectionLoop struct {
-    connections map[int]Connection
+    connections map[int]*Connection
     topicSubscriptions map[string][]int
     newConnectionChan chan net.Conn
     nextConnectionID int
 }
 
-func (cl *ConnectionLoop) addConnection(conn net.Conn) Connection {
+func (cl *ConnectionLoop) addConnection(conn net.Conn) *Connection {
     id := cl.nextConnectionID
-    cl.connections[id] = Connection{id, conn}
+    cl.connections[id] = &Connection{id, conn, nil}
     cl.nextConnectionID++
     fmt.Printf("Connection with id %v has been added\n", id)
     return cl.connections[id]
 }
 
-func (cl *ConnectionLoop) deleteConnection(connection Connection) {
+func (cl *ConnectionLoop) removeConnection(connection *Connection) {
     delete(cl.connections, connection.id)
     fmt.Printf("Connection with id %v has been removed\n", connection.id)
 }
 
 func (cl *ConnectionLoop) addSubscriptionToTopic(id int, topic string) bool {
+    // Topic exists in connection topic list, do nothing
+    if cl.connections[id].isSubscribedToTopic(topic) {
+        return false
+    }
+
     _, err := cl.getIndexOfSubscriptionInTopic(id, topic)
 
     // Already exist in topic, do nothing
     if err == nil {
+        fmt.Printf("Synchronization issue: Connection with id %i exists in topic %v but doesn't know it is\n", id, topic)
         return false
     }
 
+    cl.connections[id].addTopicToList(topic)
     cl.topicSubscriptions[topic] = append(cl.topicSubscriptions[topic], id)
     fmt.Printf("Connection with id %v has been subscribed to %s\n", id, topic)
     return true
 }
 
 func (cl *ConnectionLoop) removeSubscriptionFromTopic(id int, topic string) bool {
+    // Topic doesn't exists in connection topic list, do nothing
+    if !cl.connections[id].isSubscribedToTopic(topic) {
+        return false
+    }
+
     index, err := cl.getIndexOfSubscriptionInTopic(id, topic)
 
     // Doesn't exist in topic, do nothing
@@ -57,6 +102,7 @@ func (cl *ConnectionLoop) removeSubscriptionFromTopic(id int, topic string) bool
     }
 
     // Remove the subscription from the topic
+    cl.connections[id].removeTopicFromList(topic)
     cl.topicSubscriptions[topic] = append(cl.topicSubscriptions[topic][:index], cl.topicSubscriptions[topic][index+1:]...)
     fmt.Printf("Connection with id %v has been removed from %s\n", id, topic)
     return true
@@ -83,7 +129,7 @@ func (cl *ConnectionLoop) publishMessageToTopic(text string, topic string) {
 func (cl *ConnectionLoop) handleMsg(connMsg ConnectionMsg) {
     // Try to gracefully handle disconnection
     if connMsg.disconnected {
-        cl.deleteConnection(connMsg.connection)
+        cl.removeConnection(connMsg.connection)
         return
     }
 
@@ -95,7 +141,7 @@ func (cl *ConnectionLoop) handleMsg(connMsg ConnectionMsg) {
     case common.PUBLISH:
         cl.publishMessageToTopic(connMsg.msg.Payload, "default")
     case common.QUIT:
-        cl.deleteConnection(connMsg.connection)
+        cl.removeConnection(connMsg.connection)
     }
 }
 
@@ -118,12 +164,12 @@ func (cl *ConnectionLoop) Exec() {
 }
 
 type ConnectionMsg struct {
-    connection Connection
+    connection *Connection
     msg common.StarkMQMsg
     disconnected bool
 }
 
-func connectionHandler(connection Connection, connectionChan chan ConnectionMsg) {
+func connectionHandler(connection *Connection, connectionChan chan ConnectionMsg) {
     reader:= bufio.NewReader(connection.conn)
     for {
         text, err := reader.ReadString('\n')
@@ -153,7 +199,7 @@ func main() {
 
     newConnectionChan := make(chan net.Conn, 5)
     cl := ConnectionLoop {
-        connections: make(map[int]Connection),
+        connections: make(map[int]*Connection),
         topicSubscriptions: make(map[string][]int),
         newConnectionChan: newConnectionChan,
         nextConnectionID: 0,
@@ -164,9 +210,11 @@ func main() {
         conn, err := ln.Accept()
         if err != nil {
             fmt.Println(err)
-            return
+            break
         }
 
         newConnectionChan <- conn
     }
+
+    ln.Close()
 }
