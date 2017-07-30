@@ -1,17 +1,34 @@
 package starkmq
 
 import (
+    "bufio"
     "fmt"
     "net"
 
     "github.com/brandonto/StarkMQ/common"
 )
 
+type RxCallbackFunc func(msg string) int
+
+func defaultRxCallback(msg string) int {
+    fmt.Println("Received message but no callback was registered")
+    return 0
+}
+
 type starkMQClient struct {
     conn net.Conn
+    cb RxCallbackFunc
 }
 
 var client starkMQClient
+
+func Init() {
+    client.cb = defaultRxCallback
+}
+
+func RegisterRxCallback(cb RxCallbackFunc) {
+    client.cb = cb
+}
 
 func Connect() {
     var err error
@@ -21,7 +38,32 @@ func Connect() {
         fmt.Println(err)
         return
     }
+
+    go listen()
+
     fmt.Println("Connected to server on port 3005.")
+}
+
+func listen() {
+    reader:= bufio.NewReader(client.conn)
+    for {
+        text, err := reader.ReadString('\n')
+
+        // Try to gracefully handle disconnection
+        if err != nil {
+            break
+        }
+
+        msg := common.Deserialize(text)
+
+        switch msg.MsgType {
+        case common.PUBLISH:
+            client.cb(msg.Payload)
+        default:
+            fmt.Println("Error unsupported message type")
+            return
+        }
+    }
 }
 
 func Subscribe() {

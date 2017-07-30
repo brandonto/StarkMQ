@@ -2,7 +2,7 @@ package main
 
 import (
     "bufio"
-    //"fmt"
+    "fmt"
     "os"
     "strings"
 
@@ -13,8 +13,17 @@ func isQuitMessage(msg string) bool {
     return strings.ToLower(strings.TrimSpace(msg)) == "quit"
 }
 
+func msgRxCb(msg string) int {
+    fmt.Printf("Message received: %v\n", msg)
+    return 0
+}
+
 func main() {
+    starkmq.Init()
+
     starkmq.Connect()
+
+    starkmq.RegisterRxCallback(msgRxCb)
     starkmq.Subscribe()
 
     reader := bufio.NewReader(os.Stdin)

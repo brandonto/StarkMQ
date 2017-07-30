@@ -31,7 +31,7 @@ func (conn *Connection) addTopicToList(topic string) {
 
 func (conn *Connection) removeTopicFromList(topic string) {
     index, err := conn.getIndexOfTopicInList(topic)
-    if err == nil {
+    if err != nil {
         return
     }
 
@@ -63,20 +63,21 @@ func (cl *ConnectionLoop) addConnection(conn net.Conn) *Connection {
     return cl.connections[id]
 }
 
-func (cl *ConnectionLoop) removeConnection(connection *Connection) {
+func (cl *ConnectionLoop) removeConnection(id int) {
     // Remove connection from all topics it is subscribed to
-    for _, topic := range cl.connections[connection.id].topicsSubscribedTo {
-        cl.removeSubscriptionFromTopic(connection.id, topic)
+    for _, topic := range cl.connections[id].topicsSubscribedTo {
+        cl.removeSubscriptionFromTopic(id, topic)
     }
 
     // Remove connection from connection map
-    delete(cl.connections, connection.id)
-    fmt.Printf("Connection with id %v has been removed\n", connection.id)
+    delete(cl.connections, id)
+    fmt.Printf("Connection with id %v has been removed\n", id)
 }
 
 func (cl *ConnectionLoop) addSubscriptionToTopic(id int, topic string) bool {
     // Topic exists in connection topic list, do nothing
     if cl.connections[id].isSubscribedToTopic(topic) {
+        fmt.Printf("Subscribe failed: Connection with id %i is already subscribed to topic %v\n", id, topic)
         return false
     }
 
@@ -97,6 +98,7 @@ func (cl *ConnectionLoop) addSubscriptionToTopic(id int, topic string) bool {
 func (cl *ConnectionLoop) removeSubscriptionFromTopic(id int, topic string) bool {
     // Topic doesn't exists in connection topic list, do nothing
     if !cl.connections[id].isSubscribedToTopic(topic) {
+        fmt.Printf("Unsubscribe failed: connection with id %i is not subscribed to topic %v\n", id, topic)
         return false
     }
 
@@ -107,7 +109,6 @@ func (cl *ConnectionLoop) removeSubscriptionFromTopic(id int, topic string) bool
         return false
     }
 
-    // Remove the subscription from the topic
     cl.connections[id].removeTopicFromList(topic)
     cl.topicSubscriptions[topic] = append(cl.topicSubscriptions[topic][:index], cl.topicSubscriptions[topic][index+1:]...)
     fmt.Printf("Connection with id %v has been removed from %s\n", id, topic)
@@ -135,7 +136,7 @@ func (cl *ConnectionLoop) publishMessageToTopic(text string, topic string) {
 func (cl *ConnectionLoop) handleMsg(connMsg ConnectionMsg) {
     // Try to gracefully handle disconnection
     if connMsg.disconnected {
-        cl.removeConnection(connMsg.connection)
+        cl.removeConnection(connMsg.connection.id)
         return
     }
 
@@ -147,7 +148,7 @@ func (cl *ConnectionLoop) handleMsg(connMsg ConnectionMsg) {
     case common.PUBLISH:
         cl.publishMessageToTopic(connMsg.msg.Payload, "default")
     case common.QUIT:
-        cl.removeConnection(connMsg.connection)
+        cl.removeConnection(connMsg.connection.id)
     }
 }
 
@@ -164,7 +165,7 @@ func (cl *ConnectionLoop) Exec() {
             //for i := range cl.connections {
             //    fmt.Println(i)
             //}
-            time.Sleep(1 * time.Second)
+            time.Sleep(100 * time.Millisecond)
         }
     }
 }
