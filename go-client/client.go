@@ -51,7 +51,7 @@ func send(msg common.StarkMQMsg) {
         fmt.Fprintf(client.conn, common.Serialize(msg))
     default:
         // handle error
-        fmt.Println("message type unsupported")
+        fmt.Println("unable to serialize message: message type unsupported")
         return
     }
 }
