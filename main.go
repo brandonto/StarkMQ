@@ -75,6 +75,16 @@ type ConnectionLoop struct {
     nextConnectionID int
 }
 
+func NewConnectionLoop() ConnectionLoop {
+    cl := ConnectionLoop {
+        connections: make(map[int]*Connection),
+        topicSubscriptions: make(map[string][]int),
+        newConnectionChan: make(chan net.Conn, 5),
+        nextConnectionID: 0,
+    }
+    return cl
+}
+
 func (cl *ConnectionLoop) addConnection(conn net.Conn) *Connection {
     id := cl.nextConnectionID
     cl.connections[id] = NewConnection(id, conn)
@@ -227,13 +237,7 @@ func main() {
     }
     fmt.Println("Started server listening on port 3005.")
 
-    newConnectionChan := make(chan net.Conn, 5)
-    cl := ConnectionLoop {
-        connections: make(map[int]*Connection),
-        topicSubscriptions: make(map[string][]int),
-        newConnectionChan: newConnectionChan,
-        nextConnectionID: 0,
-    }
+    cl := NewConnectionLoop()
     go cl.Exec()
 
     for {
@@ -243,7 +247,7 @@ func main() {
             break
         }
 
-        newConnectionChan <- conn
+        cl.newConnectionChan <- conn
     }
 
     ln.Close()
