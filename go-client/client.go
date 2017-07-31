@@ -1,7 +1,7 @@
 package starkmq
 
 import (
-    "bufio"
+    "encoding/json"
     "fmt"
     "net"
 
@@ -18,9 +18,18 @@ func defaultRxCallback(msg string) int {
 type starkMQClient struct {
     conn net.Conn
     cb RxCallbackFunc
+    encoder *json.Encoder
 }
 
 var client starkMQClient
+
+func (cl *starkMQClient) send(msg common.StarkMQMsg) {
+    err := cl.encoder.Encode(msg)
+    if err != nil {
+        fmt.Println("unable to send message")
+        return
+    }
+}
 
 func Init() {
     client.cb = defaultRxCallback
@@ -39,23 +48,25 @@ func Connect() {
         return
     }
 
+    client.encoder = json.NewEncoder(client.conn)
+
     go listen()
 
     fmt.Println("Connected to server on port 3005.")
 }
 
 func listen() {
-    reader:= bufio.NewReader(client.conn)
+    decoder := json.NewDecoder(client.conn)
     for {
-        text, err := reader.ReadString('\n')
+        var msg common.StarkMQMsg
+        err := decoder.Decode(&msg)
 
         // Try to gracefully handle disconnection
         if err != nil {
             break
         }
 
-        msg := common.Deserialize(text)
-
+        //fmt.Println(msg.String())
         switch msg.MsgType {
         case common.PUBLISH:
             client.cb(msg.Payload)
@@ -90,7 +101,8 @@ func send(msg common.StarkMQMsg) {
     case common.PUBLISH:
         fallthrough
     case common.QUIT:
-        fmt.Fprintf(client.conn, common.Serialize(msg))
+        client.send(msg)
+        //fmt.Printf("Message sent: %v\n", msg)
     default:
         // handle error
         fmt.Println("unable to serialize message: message type unsupported")

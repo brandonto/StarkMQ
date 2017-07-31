@@ -13,6 +13,14 @@ func isQuitMessage(msg string) bool {
     return strings.ToLower(strings.TrimSpace(msg)) == "quit"
 }
 
+func isSubscribeMessage(msg string) bool {
+    return strings.ToLower(strings.TrimSpace(msg)) == "subscribe"
+}
+
+func isUnsubscribeMessage(msg string) bool {
+    return strings.ToLower(strings.TrimSpace(msg)) == "unsubscribe"
+}
+
 func msgRxCb(msg string) int {
     fmt.Printf("Message received: %v\n", msg)
     return 0
@@ -32,8 +40,13 @@ func main() {
         if err != nil || isQuitMessage(text) {
             starkmq.Close()
             break
+        } else if isSubscribeMessage(text) {
+            starkmq.Subscribe()
+        } else if isUnsubscribeMessage(text) {
+            starkmq.Unsubscribe()
+        } else {
+            starkmq.Publish(text)
         }
-        starkmq.Publish(text)
     }
 
     starkmq.Close()

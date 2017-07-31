@@ -1,7 +1,8 @@
 package main
 
 import (
-    "bufio"
+    //"bufio"
+    "encoding/json"
     "errors"
     "fmt"
     "net"
@@ -14,6 +15,17 @@ type Connection struct {
     id int
     conn net.Conn
     topicsSubscribedTo []string
+    encoder *json.Encoder
+}
+
+func NewConnection(id int, conn net.Conn) *Connection {
+    connection := Connection {
+        id: id,
+        conn: conn,
+        topicsSubscribedTo: nil,
+        encoder: json.NewEncoder(conn),
+    }
+    return &connection
 }
 
 func (conn *Connection) isSubscribedToTopic(topic string) bool {
@@ -48,6 +60,14 @@ func (conn *Connection) getIndexOfTopicInList(topic string) (int, error) {
     return -1, errors.New("index not found")
 }
 
+func (conn *Connection) send(msg common.StarkMQMsg) {
+    err := conn.encoder.Encode(msg)
+    if err != nil {
+        fmt.Println("unable to send message")
+        return
+    }
+}
+
 type ConnectionLoop struct {
     connections map[int]*Connection
     topicSubscriptions map[string][]int
@@ -57,7 +77,7 @@ type ConnectionLoop struct {
 
 func (cl *ConnectionLoop) addConnection(conn net.Conn) *Connection {
     id := cl.nextConnectionID
-    cl.connections[id] = &Connection{id, conn, nil}
+    cl.connections[id] = NewConnection(id, conn)
     cl.nextConnectionID++
     fmt.Printf("Connection with id %v has been added\n", id)
     return cl.connections[id]
@@ -77,7 +97,7 @@ func (cl *ConnectionLoop) removeConnection(id int) {
 func (cl *ConnectionLoop) addSubscriptionToTopic(id int, topic string) bool {
     // Topic exists in connection topic list, do nothing
     if cl.connections[id].isSubscribedToTopic(topic) {
-        fmt.Printf("Subscribe failed: Connection with id %i is already subscribed to topic %v\n", id, topic)
+        fmt.Printf("Subscribe failed: Connection with id %v is already subscribed to topic %v\n", id, topic)
         return false
     }
 
@@ -85,20 +105,20 @@ func (cl *ConnectionLoop) addSubscriptionToTopic(id int, topic string) bool {
 
     // Already exist in topic, do nothing
     if err == nil {
-        fmt.Printf("Synchronization issue: Connection with id %i exists in topic %v but doesn't know it is\n", id, topic)
+        fmt.Printf("Synchronization issue: Connection with id %v exists in topic %v but doesn't know it is\n", id, topic)
         return false
     }
 
     cl.connections[id].addTopicToList(topic)
     cl.topicSubscriptions[topic] = append(cl.topicSubscriptions[topic], id)
-    fmt.Printf("Connection with id %v has been subscribed to %s\n", id, topic)
+    fmt.Printf("Connection with id %v has been subscribed to %v\n", id, topic)
     return true
 }
 
 func (cl *ConnectionLoop) removeSubscriptionFromTopic(id int, topic string) bool {
     // Topic doesn't exists in connection topic list, do nothing
     if !cl.connections[id].isSubscribedToTopic(topic) {
-        fmt.Printf("Unsubscribe failed: connection with id %i is not subscribed to topic %v\n", id, topic)
+        fmt.Printf("Unsubscribe failed: connection with id %v is not subscribed to topic %v\n", id, topic)
         return false
     }
 
@@ -111,7 +131,7 @@ func (cl *ConnectionLoop) removeSubscriptionFromTopic(id int, topic string) bool
 
     cl.connections[id].removeTopicFromList(topic)
     cl.topicSubscriptions[topic] = append(cl.topicSubscriptions[topic][:index], cl.topicSubscriptions[topic][index+1:]...)
-    fmt.Printf("Connection with id %v has been removed from %s\n", id, topic)
+    fmt.Printf("Connection with id %v has been removed from topic %v\n", id, topic)
     return true
 }
 
@@ -125,11 +145,11 @@ func (cl *ConnectionLoop) getIndexOfSubscriptionInTopic(id int, topic string) (i
     return -1, errors.New("index not found")
 }
 
-func (cl *ConnectionLoop) publishMessageToTopic(text string, topic string) {
-    fmt.Printf("%s is being published to all subscribers of %s\n", text, topic)
+func (cl *ConnectionLoop) publishMessageToTopic(msg common.StarkMQMsg, topic string) {
+    fmt.Printf("%v is being published to all subscribers of %v\n", msg.Payload, topic)
     for _, id := range cl.topicSubscriptions[topic] {
         fmt.Printf("Publishing to %v\n", id)
-        fmt.Fprintf(cl.connections[id].conn, text)
+        cl.connections[id].send(msg)
     }
 }
 
@@ -146,9 +166,11 @@ func (cl *ConnectionLoop) handleMsg(connMsg ConnectionMsg) {
     case common.UNSUBSCRIBE:
         cl.removeSubscriptionFromTopic(connMsg.connection.id, "default")
     case common.PUBLISH:
-        cl.publishMessageToTopic(connMsg.msg.Payload, "default")
+        cl.publishMessageToTopic(connMsg.msg, "default")
     case common.QUIT:
         cl.removeConnection(connMsg.connection.id)
+    default:
+        fmt.Println("unsupported message type")
     }
 }
 
@@ -177,9 +199,10 @@ type ConnectionMsg struct {
 }
 
 func connectionHandler(connection *Connection, connectionChan chan ConnectionMsg) {
-    reader:= bufio.NewReader(connection.conn)
+    decoder := json.NewDecoder(connection.conn)
     for {
-        text, err := reader.ReadString('\n')
+        var msg common.StarkMQMsg
+        err := decoder.Decode(&msg)
 
         // Try to gracefully handle disconnection
         if err != nil {
@@ -187,7 +210,7 @@ func connectionHandler(connection *Connection, connectionChan chan ConnectionMsg
             break
         }
 
-        msg := common.Deserialize(text)
+        fmt.Printf("%v\n", msg.String())
         connectionChan <- ConnectionMsg{connection: connection, msg: msg, disconnected: false}
         if msg.MsgType == common.QUIT {
             break
