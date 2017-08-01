@@ -8,9 +8,9 @@ import (
     "github.com/brandonto/StarkMQ/common"
 )
 
-type RxCallbackFunc func(msg string) int
+type RxCallbackFunc func(msg string, topic string) int
 
-func defaultRxCallback(msg string) int {
+func defaultRxCallback(msg string, topic string) int {
     fmt.Println("Received message but no callback was registered")
     return 0
 }
@@ -63,13 +63,14 @@ func listen() {
 
         // Try to gracefully handle disconnection
         if err != nil {
+            fmt.Println("disconnected")
             break
         }
 
         //fmt.Println(msg.String())
         switch msg.MsgType {
         case common.PUBLISH:
-            client.cb(msg.Payload)
+            handlePublishMsg(msg)
         default:
             fmt.Println("Error unsupported message type")
             return
@@ -77,18 +78,54 @@ func listen() {
     }
 }
 
-func Subscribe() {
-    msg := common.NewStarkMQMsg(common.SUBSCRIBE, "subscribe\n")
+func handlePublishMsg(msg common.StarkMQMsg) {
+    var payload common.StarkMQPublishPayload
+
+    err := json.Unmarshal(msg.Payload, &payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    client.cb(payload.Text, payload.Topic)
+}
+
+func Subscribe(topic string) {
+    payload := common.NewStarkMQSubscribePayload(topic)
+
+    marshalledPayload, err := json.Marshal(payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    msg := common.NewStarkMQMsg(common.SUBSCRIBE, marshalledPayload)
     send(msg)
 }
 
-func Unsubscribe() {
-    msg := common.NewStarkMQMsg(common.UNSUBSCRIBE, "unsubscribe\n")
+func Unsubscribe(topic string) {
+    payload := common.NewStarkMQUnsubscribePayload(topic)
+
+    marshalledPayload, err := json.Marshal(payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    msg := common.NewStarkMQMsg(common.UNSUBSCRIBE, marshalledPayload)
     send(msg)
 }
 
-func Publish(text string) {
-    msg := common.NewStarkMQMsg(common.PUBLISH, text)
+func Publish(text string, topic string) {
+    payload := common.NewStarkMQPublishPayload(topic, text)
+
+    marshalledPayload, err := json.Marshal(payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    msg := common.NewStarkMQMsg(common.PUBLISH, marshalledPayload)
     send(msg)
 }
 
@@ -111,7 +148,7 @@ func send(msg common.StarkMQMsg) {
 }
 
 func Close() {
-    msg := common.NewStarkMQMsg(common.QUIT, "quit\n")
+    msg := common.NewStarkMQMsg(common.QUIT, nil)
     send(msg)
     client.conn.Close()
 }

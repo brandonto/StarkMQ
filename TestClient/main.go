@@ -21,8 +21,8 @@ func isUnsubscribeMessage(msg string) bool {
     return strings.ToLower(strings.TrimSpace(msg)) == "unsubscribe"
 }
 
-func msgRxCb(msg string) int {
-    fmt.Printf("Message received: %v\n", msg)
+func msgRxCb(msg string, topic string) int {
+    fmt.Printf("Message received: %v from topic %v\n", msg, topic)
     return 0
 }
 
@@ -32,7 +32,7 @@ func main() {
     starkmq.Connect()
 
     starkmq.RegisterRxCallback(msgRxCb)
-    starkmq.Subscribe()
+    starkmq.Subscribe("default")
 
     reader := bufio.NewReader(os.Stdin)
     for {
@@ -41,11 +41,11 @@ func main() {
             starkmq.Close()
             break
         } else if isSubscribeMessage(text) {
-            starkmq.Subscribe()
+            starkmq.Subscribe("default")
         } else if isUnsubscribeMessage(text) {
-            starkmq.Unsubscribe()
+            starkmq.Unsubscribe("default")
         } else {
-            starkmq.Publish(text)
+            starkmq.Publish(text, "default")
         }
     }
 

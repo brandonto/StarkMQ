@@ -5,11 +5,6 @@ import (
     "fmt"
 )
 
-type StarkMQMsg struct {
-    MsgType StarkMQMsgType
-    Payload string
-}
-
 type StarkMQMsgType int
 
 const (
@@ -19,7 +14,14 @@ const (
     QUIT
 )
 
-func NewStarkMQMsg(msgType StarkMQMsgType, payload string) StarkMQMsg {
+type StarkMQPayload []byte
+
+type StarkMQMsg struct {
+    MsgType StarkMQMsgType `json:"msgtype"`
+    Payload StarkMQPayload `json:"payload"`
+}
+
+func NewStarkMQMsg(msgType StarkMQMsgType, payload StarkMQPayload) StarkMQMsg {
     return StarkMQMsg{MsgType: msgType, Payload: payload}
 }
 
@@ -32,3 +34,29 @@ func (msg *StarkMQMsg) String() string {
 
     return string(data)
 }
+
+type StarkMQSubscribePayload struct {
+    Topic string `json:"topic"`
+}
+
+func NewStarkMQSubscribePayload(topic string) StarkMQSubscribePayload {
+    return StarkMQSubscribePayload{Topic: topic}
+}
+
+type StarkMQUnsubscribePayload struct {
+    Topic string `json:"topic"`
+}
+
+func NewStarkMQUnsubscribePayload(topic string) StarkMQUnsubscribePayload {
+    return StarkMQUnsubscribePayload{Topic: topic}
+}
+
+type StarkMQPublishPayload struct {
+    Topic string `json:"topic"`
+    Text string `json:"text"`
+}
+
+func NewStarkMQPublishPayload(topic string, text string) StarkMQPublishPayload {
+    return StarkMQPublishPayload{Topic: topic, Text: text}
+}
+

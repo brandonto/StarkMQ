@@ -156,29 +156,73 @@ func (cl *ConnectionLoop) getIndexOfSubscriptionInTopic(id int, topic string) (i
 }
 
 func (cl *ConnectionLoop) publishMessageToTopic(msg common.StarkMQMsg, topic string) {
-    fmt.Printf("%v is being published to all subscribers of %v\n", msg.Payload, topic)
+    fmt.Printf("Publishing to all subscribers of %v\n", topic)
     for _, id := range cl.topicSubscriptions[topic] {
         fmt.Printf("Publishing to %v\n", id)
         cl.connections[id].send(msg)
     }
 }
 
+func (cl *ConnectionLoop) handleSubscribeMsg(connMsg ConnectionMsg) {
+    var payload common.StarkMQSubscribePayload
+
+    err := json.Unmarshal(connMsg.msg.Payload, &payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    cl.addSubscriptionToTopic(connMsg.connection.id, payload.Topic)
+}
+
+func (cl *ConnectionLoop) handleUnsubscribeMsg(connMsg ConnectionMsg) {
+    var payload common.StarkMQUnsubscribePayload
+
+    err := json.Unmarshal(connMsg.msg.Payload, &payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    cl.removeSubscriptionFromTopic(connMsg.connection.id, payload.Topic)
+}
+
+func (cl *ConnectionLoop) handlePublishMsg(connMsg ConnectionMsg) {
+    var payload common.StarkMQPublishPayload
+
+    err := json.Unmarshal(connMsg.msg.Payload, &payload)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    cl.publishMessageToTopic(connMsg.msg, payload.Topic)
+}
+
+func (cl *ConnectionLoop) handleQuitMsg(connMsg ConnectionMsg) {
+    cl.removeConnection(connMsg.connection.id)
+}
+
+func (cl *ConnectionLoop) handleDisconnect(connMsg ConnectionMsg) {
+    cl.removeConnection(connMsg.connection.id)
+}
+
 func (cl *ConnectionLoop) handleMsg(connMsg ConnectionMsg) {
     // Try to gracefully handle disconnection
     if connMsg.disconnected {
-        cl.removeConnection(connMsg.connection.id)
+        cl.handleDisconnect(connMsg)
         return
     }
 
     switch connMsg.msg.MsgType {
     case common.SUBSCRIBE:
-        cl.addSubscriptionToTopic(connMsg.connection.id, "default")
+        cl.handleSubscribeMsg(connMsg)
     case common.UNSUBSCRIBE:
-        cl.removeSubscriptionFromTopic(connMsg.connection.id, "default")
+        cl.handleUnsubscribeMsg(connMsg)
     case common.PUBLISH:
-        cl.publishMessageToTopic(connMsg.msg, "default")
+        cl.handlePublishMsg(connMsg)
     case common.QUIT:
-        cl.removeConnection(connMsg.connection.id)
+        cl.handleQuitMsg(connMsg)
     default:
         fmt.Println("unsupported message type")
     }
